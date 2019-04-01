@@ -1,0 +1,243 @@
+% !TEX root = ../main.tex
+\chapter{Lit Review}
+\label{chapter:lit_review}
+
+\section*{RCNN \cite{rcnn}}
+\begin{itemize}
+\item Region proposal (2000 regions) by PGM-based method 
+\item Each region is warped to 227x227 and passed to CNN
+	\begin{itemize}
+	\item Pad tight bbox 16px
+	\end{itemize}
+\item AlexNet with last layer modified to N+1 classes (+1 for background)
+\item VGGNet same op on last layer
+\item Both pretrained on ImageNet
+\item Fine-tune with lr=0.001
+\item batches of 32 object, 96 background bboxes
+\item SVM trained on CNN feature maps (one per class)
+	\begin{itemize}
+	\item SVM replaces fine-tuned softmax classifier
+	\end{itemize}
+	
+\item Delta to bbox (x, y, w, h) can be learned using linear regression on $\text{pool}_5$ feature map
+	\begin{itemize}
+	\item Scale-invariant translation of center
+	\item Log-space translation of width and height
+	\end{itemize}
+\item Used for object detection on PASCAL VOC
+\item Can be modified for semantic segmentation
+\item At train time, use IoU threshold of 0.3 with GT
+\item At test time, non-maximum suppression of overlapping bboxes to prevent overlap (is this a desirable property?)
+\end{itemize}
+
+
+
+\section*{Fast RCNN \cite{fast_rcnn}}
+
+\begin{figure}[H]
+    \center{\includegraphics[width=\textwidth]
+    {images/fast_rcnn_architecture.png}}
+    \caption{\label{fig:fast_rcnn} Fast RCNN Architecture}
+\end{figure}
+  
+\begin{itemize}
+\item Convolutional network pre-trained on ImageNet for features
+\item RoI Pooling to achieve end-to-end training
+\item Training uses multi-task loss
+\item Speed-up over RCNN due to shared computation
+\item Region proposal is not done by network
+\end{itemize}
+
+\subsection*{RoI Pooling Layer}
+\begin{itemize}
+\item Max pooling on region of interest proposals with fixed size output ($H \times W \times C$), which replaces final pool layer on conv network
+
+	\begin{itemize}
+	\item Divide $h \times w$ RoI window into $H \times W$ grid of sub-windows of approximate size $h/H \times w/W$, and then max pooling the values in each sub-window.
+	\end{itemize}
+
+\item Allows backpropagation to pass through to conv network.
+\end{itemize}
+
+
+\subsection*{Pre-training}
+\begin{itemize}
+\item Pre-train on ImageNet
+\item Replace final max-pooling layer with RoI Pooling
+\item Replace final 1000 class FC and Softmax with two sibling layers
+	\begin{itemize}
+	\item  (K+1)-class FC + softmax
+	\item Category-specific bbox regression
+	\end{itemize}
+\item Network input is modified to take a list of images and a list of RoIs
+\end{itemize}
+
+
+\subsection*{Fine-tuning}
+\begin{itemize}
+\item Hierarchical mini-batch sampling: compose mini-batches of RoIs from same image to share weights
+\item Multi-task loss
+
+\begin{equation*}
+\begin{split}
+L(p, u, t^u, v) &= L_{cls}(p, u) + \lambda \mathbb{I}(u \ge 1) L_{loc}(t^u, v)\\[3mm]
+L_{cls}(p, u) &= -\log p_u \hspace{2em} \text{where} \;\;\;p = (p_0, \dots , p_K)\\[3mm]
+L_{loc}(t^u, v) &= \sum\limits_{i \in \{ x,y,w,h \} } \text{smooth}_{L_1}(t_i^u - v_i)\\[3mm]
+& \text{where} \;\;\; \text{smooth}_{L_1}(x) = 
+	\begin{dcases}
+	0.5x^2, & \text{if} |x| < 1\\
+	|x| - 0.5, & otherwise
+	\end{dcases}\\[3mm]
+\end{split}
+\end{equation*}
+
+	\begin{itemize}
+	\item 
+	\end{itemize}
+\end{itemize}
+
+\subsection*{Training Details}
+\begin{itemize}
+\item Mini-batch sampling
+	\begin{itemize}
+	\item R = 2 images x 64 RoIs, with 25\% of RoIs taken from foreground with GT IoU $>$ 0.5 
+	\end{itemize}
+
+\item SGD hyper-parameters
+	\begin{itemize}
+	\item Gaussian initialization, with 0 bias
+	\item lr = 0.001
+	\item For VOC07 or VOC12, SGD, with stepped learning rate
+	\item For larger datasets, SGD with momentum
+	\end{itemize}
+	
+\item Scale invariance
+	\begin{itemize}
+	\item Brute force learning \\$vs$
+	\item Sample from image pyramid as data-augmentation
+	\end{itemize}
+\end{itemize}
+
+\subsection*{Test Details}
+\begin{itemize}
+\item Per-class non-maximum suppression using estimated probability $p(k | r)$
+\item Replace FC layer with SVD approximation for speedup 
+\end{itemize}
+
+
+\section*{Faster RCNN \cite{faster_rcnn}}
+
+\begin{figure}[H]
+    \center{\includegraphics[width=0.5\textwidth]
+    {images/faster_rcnn_architecture.png}}
+    \caption{\label{fig:faster_rcnn_arch} Faster RCNN Architecture}
+\end{figure}
+
+\begin{itemize}
+\item Make fully end-to-end with Region Proposal Network, which acts as an attention mechanism telling the Fast R-CNN module where to look.
+\end{itemize}
+
+\subsection*{Region Proposal Networks}
+\begin{figure}[H]
+    \center{\includegraphics[width=\textwidth]
+    {images/fast_rcnn_architecture.png}}
+    \caption{\label{fig:faster_rcnn_rpn} RPN Architecture}
+\end{figure}
+\begin{itemize}
+\item Maps convolutional features from last convolutional layer of pretrained VGG-16, at each position, to $2k \; cls$ scores and $4k \; reg$ bbox coordinates, representing $k$ detection box proposals:
+	
+\item Effectively a sliding window over features, mapping each $n \times n$ window to a lower-dimensional embedding (512-d for VGG), which is then passed to the box-classification ($cls$) and box-regression ($reg$) layers.
+	\begin{itemize}
+	\item In practice can be implemented with a $n \times n$ convolutional layer followed by two sibling $1 \times 1$ convolutional layers.
+	\end{itemize}
+\end{itemize}
+
+\subsubsection*{Anchors}
+\begin{itemize}
+\item At each position, start with $k$ anchor boxes of fixed size and aspect ratio. Authors use $k=9$ (3 scales, 3 aspect ratios)
+\item For each anchor:
+	\begin{itemize}
+	\item 2$k$ classification: probability of object / not-object
+	\item 4$k$ regression: bounding box parameter deltas
+		\begin{itemize}
+		\item $\Delta x, \Delta y, \Delta w, \Delta h$
+		\end{itemize}
+	\end{itemize}
+	
+\item Translation equivariant (authors mistakenly call it "invariant")
+\end{itemize}
+
+
+\subsubsection*{Training Loss}
+\begin{center}
+$L(\{p_i\}, \{t_i\}) = \dfrac{1}{N_{cls}}\sum\limits_{i}L_{cls}(p_i, p_i^*) + \lambda \dfrac{1}{N_{reg}}\sum\limits_{i}p_i^*L_{reg}(t_i, t_i^*)$\\[5mm]
+$L_{cls}(p, p^*) = \sum\limits_{i}-log(p)^{p^*}log(1-p)^{1-p^*}$ \hspace{2em} $L_{reg}(t,t^*) = \text{smooth}_{L_1}(t - t^*)$
+\end{center}
+
+where $i$ is the index of an anchor (in a mini-batch), $p_i$ is the predicted probability of objectness, $t_i \in \mathbb{R}^4$ represents the predicted bbox coordinates. $N_cls$ is set to mini-batch size (256), $N_{reg}$ is the number of anchor locations ($\sim$2400), and $\lambda$ is set to 10 to balance the two losses.
+
+$\text{smooth}_{L_1}$ is defined in Fast R-CNN 
+
+\begin{equation*}
+\begin{aligned}[c]
+t_x &= (x - x_a) / w_a\\
+t_w &= log(w / w_a)\\
+t_x^* &= (x^* - x_a) / w_a\\
+t_w^* &= log(w^* / w_a)
+\end{aligned}
+\hspace{3em}
+\begin{aligned}[c]
+t_y &= (y - y_a) / h_a\\
+t_h &= log(h / h_a)\\
+t_y^* &= (y^* - y_a) / h_a\\
+t_h^* &= log(h^* / h_a)
+\end{aligned}
+\end{equation*}
+
+\begin{itemize}
+\item Positive class assigned to anchor(s) with highest IoU with a given ground-truth box and anchors that have IoU overlap greater than 0.7 with any ground-truth box.
+\item Negative class assigned to anchor if IoU lower than 0.3 for all ground-truth boxes (and it is not the highest for a given gt box)
+\item Boxes that are neither positive or negative do not contribute to the loss
+\item $k$ regressors are learned for bounding box regression, one for each (scale, aspect ratio) pair
+\end{itemize}
+
+\subsubsection*{Training}
+Three training modes are considered:
+\begin{itemize}
+\item \textit{Alternating training}: First train RPN, then fix RPN and train Fast R-CNN. Iterate
+\item \textit{Approximate joint training}: Combine backprop signal from RPN loss and Fast R-CNN loss in shared layers.
+\item \textit{Non-approximate joint training}: Box params also influence Fast R-CNN, and so should get signal from Fast R-CNN loss as well. "Nontrivial problem", "beyond scope of this paper"
+\end{itemize}
+
+\section*{Mask RCNN \cite{mask_rcnn}}
+\begin{itemize}
+\item 
+\end{itemize}
+
+
+
+\section*{PlaneRCNN \cite{plane_rcnn}}
+\begin{itemize}
+\item 
+\end{itemize}
+
+
+
+\section*{FCN \cite{fcn}}
+\begin{itemize}
+\item Fully convolutional networks for semantic segmentation
+\item Solves subsampling problem using transpose convolution, i.e. output will be smaller than input
+    \begin{itemize}
+        \item Other option: a trous algorithm: reduce stride, use dilated convolutions
+    \end{itemize}
+\item Train with per-pixel multinomial logistic loss
+\item Validate with mean IoU
+%\item Whole image training is as effective as patchwise training / loss sampling, but more efficient
+\item Remove FC heads of classification nets (Alex, VGG, GoogLe), and fine-tune
+\item Skip connections combine fine and coarse layers to allow model to make local predictions that respect global structure
+	\begin{itemize}
+	    \item 1x1 conv from pool4 (c=nClasses), summed with 2x upsampled conv7 output (fcn-16s)
+	    \item Learned end-to-end, with init from no-skip model (fcn-32s), 1x1 conv is zero-initialized $\leftrightarrow$ unmodified predictions
+	    \item fcn-8s: 1x1 conv on pool3 + 2x-upsampled pool4 + 4x-upsampled conv7
+	\end{itemize}
+\end{itemize}
